@@ -30,7 +30,7 @@ INT32 usage()
     return -1;
 }
 
-std::pair< vector<IFR_BasicBlock>, hash_map<ADDRINT, IFR_BasicBlock> > findBlocks(RTN rtn){
+void findBlocks(RTN rtn, vector<IFR_BasicBlock> &bblist, hash_map<ADDRINT, IFR_BasicBlock> &blocks){
 
   /*Takes a PIN RTN object and returns a set containing the 
    *addresses of the instructions that are entry points to basic blocks
@@ -65,8 +65,6 @@ std::pair< vector<IFR_BasicBlock>, hash_map<ADDRINT, IFR_BasicBlock> > findBlock
 
   fprintf(stderr,"Computing blocks...\n"); 
   int ii = 0;
-  hash_map<ADDRINT, IFR_BasicBlock> blocks = hash_map<ADDRINT, IFR_BasicBlock>(); 
-  std::vector<IFR_BasicBlock> bblist = std::vector<IFR_BasicBlock>();
 
   IFR_BasicBlock bb = IFR_BasicBlock();   
   for (INS ins = RTN_InsHead(rtn); INS_Valid(ins); ins = INS_Next(ins)){
@@ -97,34 +95,29 @@ std::pair< vector<IFR_BasicBlock>, hash_map<ADDRINT, IFR_BasicBlock> > findBlock
         }
 
       }else{
+
         /*Block ends with a non-branch insn*/
         bb.setTarget(0);
         bb.setFallthrough(INS_NextAddress(ins));
+
       }
 
-      //fprintf(stderr,"Setting blocks[ bb.getEntryAddr ] = bb for %p\n", bb.getEntryAddr() );
-      //ADDRINT debug_entryaddr = bb.getEntryAddr();
-      //bb.print();
-      blocks[ bb.getEntryAddr() ] = bb;
-      //fprintf(stderr,"Setting the block was successful.  Adding it to the bblist\n");
+      blocks.insert( std::pair<ADDRINT,IFR_BasicBlock>(bb.getEntryAddr(), IFR_BasicBlock(bb)) ); 
+      bblist.push_back(IFR_BasicBlock(bb));
+      bb.clear();
 
-      bblist.push_back(bb);
-      bb = IFR_BasicBlock();  //ends the block
-      //fprintf(stderr,"==============DEBUG===========\n");
-      //blocks[ debug_entryaddr ].print();
     }
 
   }
   fprintf(stderr,"Done!\n");
 
-  return std::pair< vector<IFR_BasicBlock>, hash_map<ADDRINT, IFR_BasicBlock> >(bblist,blocks);
+  return;
    
 }
 
-hash_map<ADDRINT, set<ADDRINT> > computePredecessors(RTN rtn, vector<IFR_BasicBlock> bblist){
+void computePredecessors(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT, set<ADDRINT> > &pred){
 
   fprintf(stderr,"Computing predecessors...\n");
-  hash_map<ADDRINT, set<ADDRINT> > pred = hash_map<ADDRINT, set<ADDRINT> >();
   
   pred[ bblist.begin()->getEntryAddr() ] = set<ADDRINT>(); 
   for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
@@ -142,13 +135,12 @@ hash_map<ADDRINT, set<ADDRINT> > computePredecessors(RTN rtn, vector<IFR_BasicBl
 
   }
   fprintf(stderr,"Done Computing predecessors\n");
-  return pred;
+  return;
 
 }
 
-hash_map<ADDRINT, set<ADDRINT> > computeDominators(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT, set<ADDRINT> > pred){
+void computeDominators(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT, set<ADDRINT> > pred, hash_map<ADDRINT, set<ADDRINT> > &dom){
 
-  hash_map<ADDRINT, set<ADDRINT> > dom = hash_map<ADDRINT, set<ADDRINT> >();
 
   fprintf(stderr,"First setting allnodes to all nodes \n");
   set<ADDRINT> allNodes = set<ADDRINT>(); 
@@ -159,7 +151,7 @@ hash_map<ADDRINT, set<ADDRINT> > computeDominators(RTN rtn, vector<IFR_BasicBloc
 
   fprintf(stderr,"Dom set of entry node is the empty set\n");
   /*Set the dominator set of the entry node to be empty*/
-  dom[ bblist.begin()->getEntryAddr() ] = set<ADDRINT>();
+  dom.insert(std::pair<ADDRINT,set<ADDRINT> >(bblist.begin()->getEntryAddr(), set<ADDRINT>()));
   dom[ bblist.begin()->getEntryAddr() ].insert( bblist.begin()->getEntryAddr() );
 
   fprintf(stderr,"Done: Dom set of entry node is the empty set\n");
@@ -175,6 +167,7 @@ hash_map<ADDRINT, set<ADDRINT> > computeDominators(RTN rtn, vector<IFR_BasicBloc
       continue;
     }
 
+    dom.insert(std::pair<ADDRINT,set<ADDRINT> >(i->getEntryAddr(), set<ADDRINT>()));
     dom[ i->getEntryAddr() ].insert( allNodes.begin(), allNodes.end() ); 
      
   }
@@ -262,11 +255,12 @@ VOID instrumentRoutine(RTN rtn, VOID *v){
     return;
   }
 
-  std::pair< vector<IFR_BasicBlock>, hash_map<ADDRINT, IFR_BasicBlock> > p  = findBlocks(rtn); 
-  vector<IFR_BasicBlock> bblist = p.first; 
-  hash_map<ADDRINT, IFR_BasicBlock> blocks = p.second;
-
-  hash_map<ADDRINT, set<ADDRINT> > pred = computePredecessors(rtn,bblist);
+  vector<IFR_BasicBlock> bblist = vector<IFR_BasicBlock>(); 
+  hash_map<ADDRINT, IFR_BasicBlock> blocks = hash_map<ADDRINT, IFR_BasicBlock>();
+  findBlocks(rtn,bblist,blocks); 
+  
+  hash_map<ADDRINT, set<ADDRINT> > pred = hash_map<ADDRINT, set<ADDRINT> >();
+  computePredecessors(rtn,bblist,pred);
   for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
     fprintf(stderr,"Predecessors to %p:\n\t",i->getEntryAddr());
     for( set<ADDRINT>::iterator pi = pred[ i->getEntryAddr() ].begin();
@@ -277,7 +271,18 @@ VOID instrumentRoutine(RTN rtn, VOID *v){
   }
 
   fprintf(stderr,"Computing dominators!\n");
-  hash_map<ADDRINT, set<ADDRINT> > dominators = computeDominators(rtn,bblist,pred);
+  hash_map<ADDRINT, set<ADDRINT> > dominators = hash_map<ADDRINT, set<ADDRINT> >();
+  computeDominators(rtn, bblist, pred, dominators);
+  for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
+    fprintf(stderr,"Dominators of %p:\n\t",i->getEntryAddr());
+    for( set<ADDRINT>::iterator di = dominators[ i->getEntryAddr() ].begin();
+         di != dominators[ i->getEntryAddr() ].end(); di++ ){
+         fprintf(stderr,"%p ",*di);
+    }
+    fprintf(stderr,"\n");
+  }
+  
+
   fprintf(stderr,"Done Computing Dominators!\n");
 
   fprintf(stderr,">>>>>>>>>>>>>>%s<<<<<<<<<<<<<<<\n",RTN_Name(rtn).c_str());
