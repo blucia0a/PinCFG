@@ -63,50 +63,44 @@ vector<IFR_BasicBlock> findBlocks(RTN rtn){
   IFR_BasicBlock bb = IFR_BasicBlock();   
   for (INS ins = RTN_InsHead(rtn); INS_Valid(ins); ins = INS_Next(ins)){
 
-    fprintf(stderr,"Processing %p\n",INS_Address(ins));
     bb.add(ins);
 
     INS next = INS_Next(ins);
-    if( INS_Valid(next) ){
-      /*Next is a valid instruction.*/
+    if(   (INS_Valid(next) &&  leaders.find(INS_Address(next)) != leaders.end()) || !INS_Valid(next) ){
 
-      if( leaders.find(INS_Address(next)) != leaders.end() ){
+      /*Next is a block leader or end of routine -- End the block here*/
 
-        /*Next is a block leader -- End the block here*/
+      if( INS_IsBranch(ins) ){
 
-        if( INS_IsBranch(ins) ){
+        /*Block ends with a branch insn*/
 
-          /*Block ends with a branch insn*/
+        assert( !INS_IsRet(ins) );
+        if( !INS_IsIndirectBranchOrCall(ins) ){
 
-          assert( !INS_IsRet(ins) );
-          if( !INS_IsIndirectBranchOrCall(ins) ){
-
-            /*End of block with Direct Branch insns*/        
-            bb.setTarget(INS_DirectBranchOrCallTargetAddress(ins));
-            if( INS_Category(ins) != XED_CATEGORY_UNCOND_BR ){
-              bb.setFallthrough(INS_NextAddress(ins));
-            }else{
-              bb.setFallthrough(0);
-            }
-
+          /*End of block with Direct Branch insns*/        
+          bb.setTarget(INS_DirectBranchOrCallTargetAddress(ins));
+          if( INS_Category(ins) != XED_CATEGORY_UNCOND_BR ){
+            bb.setFallthrough(INS_NextAddress(ins));
+          }else{
+            bb.setFallthrough(0);
           }
 
-        }else{
-          /*Block ends with a non-branch insn*/
-          bb.setTarget(0);
-          bb.setFallthrough(INS_NextAddress(ins));
         }
-        bblist.push_back(bb);
-        bb = IFR_BasicBlock();  //ends the block
 
+      }else{
+        /*Block ends with a non-branch insn*/
+        bb.setTarget(0);
+        bb.setFallthrough(INS_NextAddress(ins));
       }
+      bblist.push_back(bb);
+      bb = IFR_BasicBlock();  //ends the block
 
     }
 
   }
-  bb.setTarget(0);
-  bb.setFallthrough(0);
-  bblist.push_back(bb);
+  //bb.setTarget(0);
+  //bb.setFallthrough(0);
+  //bblist.push_back(bb);
 
   return bblist;
    
