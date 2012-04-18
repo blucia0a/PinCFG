@@ -17,8 +17,10 @@
 
 using __gnu_cxx::hash_map;
 
-//KNOB<bool> KnobConcise(KNOB_MODE_WRITEONCE, "pintool",
-//			   "concise", "true", "Print output concisely");//default cache is verbose 
+KNOB<bool> KnobPred(KNOB_MODE_WRITEONCE, "pintool", "pred", "false", "Print block predecessors");
+KNOB<bool> KnobDom(KNOB_MODE_WRITEONCE, "pintool", "dom", "false", "Print block dominators");
+KNOB<bool> KnobIDom(KNOB_MODE_WRITEONCE, "pintool", "idom", "false", "Print block immediate dominators");
+KNOB<bool> KnobBlocks(KNOB_MODE_WRITEONCE, "pintool", "blocks", "false", "Print disassembled code blocks ");
 
 enum MemOpType { MemRead = 0, MemWrite = 1 };
 
@@ -30,7 +32,9 @@ INT32 usage()
     return -1;
 }
 
-void findBlocks(RTN rtn, vector<IFR_BasicBlock> &bblist, hash_map<ADDRINT, IFR_BasicBlock> &blocks){
+void findBlocks(RTN rtn, 
+                vector<IFR_BasicBlock> &bblist, 
+                hash_map<ADDRINT, IFR_BasicBlock> &blocks){
 
   /*Takes a PIN RTN object and returns a set containing the 
    *addresses of the instructions that are entry points to basic blocks
@@ -63,13 +67,11 @@ void findBlocks(RTN rtn, vector<IFR_BasicBlock> &bblist, hash_map<ADDRINT, IFR_B
 
   }
 
-  fprintf(stderr,"Computing blocks...\n"); 
   int ii = 0;
 
   IFR_BasicBlock bb = IFR_BasicBlock();   
   for (INS ins = RTN_InsHead(rtn); INS_Valid(ins); ins = INS_Next(ins)){
 
-    fprintf(stderr," %d", ++ii); 
     bb.add(ins);
 
     INS next = INS_Next(ins);
@@ -109,15 +111,15 @@ void findBlocks(RTN rtn, vector<IFR_BasicBlock> &bblist, hash_map<ADDRINT, IFR_B
     }
 
   }
-  fprintf(stderr,"Done!\n");
 
   return;
    
 }
 
-void computePredecessors(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT, set<ADDRINT> > &pred){
+void computePredecessors(RTN rtn, 
+                         vector<IFR_BasicBlock> &bblist, 
+                         hash_map<ADDRINT, set<ADDRINT> > &pred){
 
-  fprintf(stderr,"Computing predecessors...\n");
   
   pred[ bblist.begin()->getEntryAddr() ] = set<ADDRINT>(); 
   for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
@@ -134,30 +136,27 @@ void computePredecessors(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRIN
     pred[ i->getFallthrough() ].insert( i->getEntryAddr() );
 
   }
-  fprintf(stderr,"Done Computing predecessors\n");
   return;
 
 }
 
-void computeDominators(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT, set<ADDRINT> > pred, hash_map<ADDRINT, set<ADDRINT> > &dom){
+void computeDominators(RTN rtn, 
+                       vector<IFR_BasicBlock> &bblist, 
+                       hash_map<ADDRINT, set<ADDRINT> > &pred, 
+                       hash_map<ADDRINT, set<ADDRINT> > &dom){
 
 
-  fprintf(stderr,"First setting allnodes to all nodes \n");
   set<ADDRINT> allNodes = set<ADDRINT>(); 
   for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
     allNodes.insert( i->getEntryAddr() ); 
   }
-  fprintf(stderr,"Done setting allnodes to all nodes \n");
 
-  fprintf(stderr,"Dom set of entry node is the empty set\n");
   /*Set the dominator set of the entry node to be empty*/
   dom.insert(std::pair<ADDRINT,set<ADDRINT> >(bblist.begin()->getEntryAddr(), set<ADDRINT>()));
   dom[ bblist.begin()->getEntryAddr() ].insert( bblist.begin()->getEntryAddr() );
 
-  fprintf(stderr,"Done: Dom set of entry node is the empty set\n");
   
   /*Set the dominator set for all other nodes to be all nodes*/
-  fprintf(stderr,"Initializing dom sets to full...\n");
   bool first = true;
   for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
 
@@ -171,7 +170,6 @@ void computeDominators(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT,
     dom[ i->getEntryAddr() ].insert( allNodes.begin(), allNodes.end() ); 
      
   }
-  fprintf(stderr,"Done Initializing dom sets to full\n");
 
   /*Fixed-Point Part: Iteratively remove elems from each nodes dom set until
    *                  no set changes.
@@ -184,7 +182,6 @@ void computeDominators(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT,
     dbg_i++;
 
     bool first = true;
-    fprintf(stderr,"Dataflow Eq. Iteration %d\n",dbg_i);
     for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
 
       if( first ){
@@ -194,7 +191,6 @@ void computeDominators(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT,
       }
       
       /*Intersection over all p \in pred(n)( dom(p) ) ... */
-      fprintf(stderr,"Searching predecessors...\n");
       set<ADDRINT> intDoms = set<ADDRINT>();
       bool firstPred = true;
       for(set<ADDRINT>::iterator p = pred[ i->getEntryAddr() ].begin();
@@ -224,7 +220,6 @@ void computeDominators(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT,
         }
 
       } 
-      fprintf(stderr,"Done Searching predecessors...\n");
 
       /*... Unioned with n itself */
       intDoms.insert( i->getEntryAddr() );
@@ -246,6 +241,55 @@ void computeDominators(RTN rtn, vector<IFR_BasicBlock> bblist, hash_map<ADDRINT,
 
 }
 
+void computeIDoms(vector<IFR_BasicBlock> &bblist, 
+                  hash_map<ADDRINT, set<ADDRINT> > &dom, 
+                  hash_map<ADDRINT, ADDRINT> &idom){
+
+  for( vector<IFR_BasicBlock>::iterator bi = bblist.begin();
+       bi != bblist.end();
+       bi++
+     ){
+
+    for( set<ADDRINT>::iterator di = dom[bi->getEntryAddr()].begin();
+         di != dom[bi->getEntryAddr()].end();
+         di++
+       ){
+  
+      if( *di == bi->getEntryAddr() ){ continue; }  //only strict dominators are considered
+      bool iDom = true; 
+      for( set<ADDRINT>::iterator odi = dom[bi->getEntryAddr()].begin();
+           odi != dom[bi->getEntryAddr()].end();
+           odi++
+         ){
+
+        if( *odi == bi->getEntryAddr() ){ continue; }  //bi-> is the one whose idom we're looking for
+        if( *odi == *di ){ continue; }  //only strict dominators are considered
+
+        /*If any other dominator in bi's dominator set is dominated by di, then
+         *di can't be bi's iDom.
+         */
+        if( dom[ *odi ].find( *di ) != dom[ *odi ].end()){
+          iDom = false;
+        }
+
+      }
+
+      if( iDom ){
+        assert( idom.find(bi->getEntryAddr()) == idom.end() );
+        idom.insert( std::pair<ADDRINT, ADDRINT>(bi->getEntryAddr(), *di) );
+      } 
+
+    }
+
+    if( idom.find(bi->getEntryAddr()) == idom.end() ){
+      /*an immediate dominator of 0 means this node has no immediate dominator*/
+      idom.insert( std::pair<ADDRINT, ADDRINT>(bi->getEntryAddr(), 0) );
+    }
+
+  }
+
+}
+
 VOID instrumentRoutine(RTN rtn, VOID *v){
  
 
@@ -255,45 +299,59 @@ VOID instrumentRoutine(RTN rtn, VOID *v){
     return;
   }
 
+  fprintf(stderr,">>>>>>>>>>>>>>%s<<<<<<<<<<<<<<<\n",RTN_Name(rtn).c_str());
+
   vector<IFR_BasicBlock> bblist = vector<IFR_BasicBlock>(); 
   hash_map<ADDRINT, IFR_BasicBlock> blocks = hash_map<ADDRINT, IFR_BasicBlock>();
   findBlocks(rtn,bblist,blocks); 
   
   hash_map<ADDRINT, set<ADDRINT> > pred = hash_map<ADDRINT, set<ADDRINT> >();
   computePredecessors(rtn,bblist,pred);
-  for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
-    fprintf(stderr,"Predecessors to %p:\n\t",i->getEntryAddr());
-    for( set<ADDRINT>::iterator pi = pred[ i->getEntryAddr() ].begin();
-         pi != pred[ i->getEntryAddr() ].end(); pi++ ){
-         fprintf(stderr,"%p ",*pi);
+
+  if( KnobPred.Value() == true ){
+    for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
+      fprintf(stderr,"Predecessors to %p:\n\t",i->getEntryAddr());
+      for( set<ADDRINT>::iterator pi = pred[ i->getEntryAddr() ].begin();
+           pi != pred[ i->getEntryAddr() ].end(); pi++ ){
+           fprintf(stderr,"%p ",*pi);
+      }
+      fprintf(stderr,"\n");
     }
-    fprintf(stderr,"\n");
   }
 
-  fprintf(stderr,"Computing dominators!\n");
-  hash_map<ADDRINT, set<ADDRINT> > dominators = hash_map<ADDRINT, set<ADDRINT> >();
-  computeDominators(rtn, bblist, pred, dominators);
-  for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
-    fprintf(stderr,"Dominators of %p:\n\t",i->getEntryAddr());
-    for( set<ADDRINT>::iterator di = dominators[ i->getEntryAddr() ].begin();
-         di != dominators[ i->getEntryAddr() ].end(); di++ ){
-         fprintf(stderr,"%p ",*di);
+  hash_map<ADDRINT, set<ADDRINT> > dom = hash_map<ADDRINT, set<ADDRINT> >();
+  computeDominators(rtn, bblist, pred, dom);
+  
+  if( KnobDom.Value() == true ){
+    for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
+      fprintf(stderr,"Dominators of %p:\n\t",i->getEntryAddr());
+      for( set<ADDRINT>::iterator di = dom[ i->getEntryAddr() ].begin();
+           di != dom[ i->getEntryAddr() ].end(); di++ ){
+           fprintf(stderr,"%p ",*di);
+      }
+      fprintf(stderr,"\n");
     }
-    fprintf(stderr,"\n");
   }
   
+  hash_map<ADDRINT, ADDRINT > idom = hash_map<ADDRINT, ADDRINT >();
+  computeIDoms(bblist, dom, idom);
 
-  fprintf(stderr,"Done Computing Dominators!\n");
+  if( KnobIDom.Value() == true ){
+    for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
+      fprintf(stderr,"IDom of %p: %p\n",i->getEntryAddr(), idom[i->getEntryAddr()]);
+    }
+  }
 
-  fprintf(stderr,">>>>>>>>>>>>>>%s<<<<<<<<<<<<<<<\n",RTN_Name(rtn).c_str());
-  for( std::vector<IFR_BasicBlock>::iterator i = bblist.begin();
-       i != bblist.end();
-       i++
-     ){
-
-    i->print();
-    fprintf(stderr,"-------------------------------------\n");
-
+  if( KnobBlocks.Value() == true ){
+    for( std::vector<IFR_BasicBlock>::iterator i = bblist.begin();
+         i != bblist.end();
+         i++
+       ){
+  
+      i->print();
+      fprintf(stderr,"-------------------------------------\n");
+  
+    }
   }
 
   RTN_Close(rtn);
