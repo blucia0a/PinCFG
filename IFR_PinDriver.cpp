@@ -290,6 +290,24 @@ void computeIDoms(vector<IFR_BasicBlock> &bblist,
 
 }
 
+void computeDominanceFrontiers( vector<IFR_BasicBlock> &bblist, 
+                                hash_map<ADDRINT, set<ADDRINT> > &pred, 
+                                hash_map<ADDRINT, set<ADDRINT> > &dom, 
+                                hash_map<ADDRINT, ADDRINT> &idom 
+                                hash_map<ADDRINT, set<ADDRINT> > &df ){
+
+
+  for( vector<IFR_BasicBlock>::iterator i = bblist.begin(),
+       i != bblist.end();
+       i++ ){
+
+    //TODO: Implement algorithm on page 464 of "Engineering a Compiler" 
+
+  }
+
+
+}
+
 VOID instrumentRoutine(RTN rtn, VOID *v){
  
 
