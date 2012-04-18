@@ -290,6 +290,23 @@ void computeIDoms(vector<IFR_BasicBlock> &bblist,
 
 }
 
+
+bool dominates(ADDRINT b1, ADDRINT b2, hash_map<ADDRINT, set<ADDRINT> > &dom){
+  /*True if b2 is in b1's dominator set; AKA true if b2 dominates b1.*/
+  return dom[ b1 ].find( b2 ) != dom[ b1 ].end();
+}
+
+bool strictlyDominates(ADDRINT b1, ADDRINT b2, hash_map<ADDRINT, set<ADDRINT> > &dom){
+  /*True if b2 is in b1's dominator set; AKA true if b2 dominates b1.*/
+  return ((dom[ b1 ].find( b2 ) != dom[ b1 ].end()) && (b1 != b2));
+}
+
+bool immediatelyDominates(ADDRINT b1, ADDRINT b2, hash_map<ADDRINT, ADDRINT> &idom){
+  /*Returns true if b2 is b1's immediate dominator*/
+  return idom[ b1 ] == b2;
+}
+
+
 void computeDominanceFrontiers( vector<IFR_BasicBlock> &bblist, 
                                 hash_map<ADDRINT, set<ADDRINT> > &pred, 
                                 hash_map<ADDRINT, set<ADDRINT> > &dom, 
@@ -301,12 +318,30 @@ void computeDominanceFrontiers( vector<IFR_BasicBlock> &bblist,
        i != bblist.end();
        i++ ){
 
-    //TODO: Implement algorithm on page 464 of "Engineering a Compiler" 
+    //for each block 
+   
+    ADDRINT runner = 0; 
+    if( pred[ i->getEntryAddr() ].size() >= 2 ){
+      
+      for( set<ADDRINT>::iterator pi = pred[ i->getEntryAddr() ].begin();
+           pi != pred[ i->getEntryAddr() ].end();
+           pi++
+         ){
+
+        runner = idom[ *pi ]; 
+        while( runner != idom[ i->getEntryAddr() ] ){
+          df[ runner ] = df[runner]; /*TODO: df[ runner ] <-- DF[runner] U {i}*/
+          /*runner = idom[runner];*/
+        }
+
+      }
+ 
+    } 
 
   }
 
-
 }
+
 
 VOID instrumentRoutine(RTN rtn, VOID *v){
  
