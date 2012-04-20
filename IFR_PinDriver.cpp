@@ -14,6 +14,7 @@
 #include <assert.h>
 
 #include "IFR_BasicBlock.h"
+#include "IFR_MemoryRef.h"
 
 using __gnu_cxx::hash_map;
 
@@ -22,9 +23,9 @@ KNOB<bool> KnobDom(KNOB_MODE_WRITEONCE, "pintool", "dom", "false", "Print block 
 KNOB<bool> KnobIDom(KNOB_MODE_WRITEONCE, "pintool", "idom", "false", "Print block immediate dominators");
 KNOB<bool> KnobDF(KNOB_MODE_WRITEONCE, "pintool", "df", "false", "Print block dominance frontiers");
 KNOB<bool> KnobSSA(KNOB_MODE_WRITEONCE, "pintool", "ssa", "false", "Print ssa transformation");
+KNOB<bool> KnobMemRefs(KNOB_MODE_WRITEONCE, "pintool", "memrefs", "false", "Print mem refs for each ins");
 KNOB<bool> KnobBlocks(KNOB_MODE_WRITEONCE, "pintool", "blocks", "false", "Print disassembled code blocks ");
 
-enum MemOpType { MemRead = 0, MemWrite = 1 };
 
 INT32 usage()
 {
@@ -344,100 +345,118 @@ void computeDominanceFrontiers( vector<IFR_BasicBlock> &bblist,
 
 }
 
-void printMemOp(INS i, UINT32 op){
+
+void computeMemRef(INS i, UINT32 op, IFR_MemoryRef &ref){
 
   //assumes operand op to instruction i is a memory operation 
-  cerr << "M[ ";
-  if( INS_OperandIsImmediate( i, op ) ){
-    cerr << "Immediate...";
-  }
-
-  REG r;
-  if( (r = INS_OperandMemoryBaseReg( i, op )) != REG_INVALID() ){
-    cerr << "r" << r; 
-  }
-
+  REG r = INS_OperandMemoryBaseReg( i, op );
   ADDRDELTA d = INS_OperandMemoryDisplacement( i, op );
-  cerr << " + " << d;
-
-  REG ind;
-  if( (ind = INS_OperandMemoryIndexReg( i, op )) != REG_INVALID() ){
-
-    UINT32 s;
-    s = INS_OperandMemoryScale( i, op );
-    cerr << " + r" << ind << "*" << s;
-
-  }
-
-  cerr << " ]" << endl;
+  REG ind = INS_OperandMemoryIndexReg( i, op );
+  UINT32 s = INS_OperandMemoryScale( i, op );
+  ref.base = r;
+  ref.displacement = d;
+  ref.index = ind;
+  ref.scale = s;
 
 }
 
-void computeSSA(vector<IFR_BasicBlock> &bblist){
+void printMemRef(IFR_MemoryRef &ref){
+
+  //assumes operand op to instruction i is a memory operation 
+  cerr << (ref.type == MemRead ? "R" : (ref.type == MemWrite ? "W" : "RW"))  << "( M[ ";
+
+  REG r;
+  if( ref.base != REG_INVALID() ){
+    cerr << "r" << ref.base; 
+  }
+
+  cerr << " + " << ref.displacement;
+
+  if( ref.index  != REG_INVALID() ){
+
+    cerr << " + r" << ref.index << "*" << ref.scale;
+
+  }
+
+  cerr << " ])";
+
+}
+
+
+void computeMemoryReferences(vector<IFR_BasicBlock> &bblist, 
+                             hash_map<ADDRINT, 
+                                      hash_map< unsigned, 
+                                                vector<IFR_MemoryRef> > > &memrefs){
 
   for( vector<IFR_BasicBlock>::iterator i = bblist.begin();
        i != bblist.end();
        i++ ){
 
+    int in = 0;
     for( vector<INS>::iterator ins_i = i->insns.begin();
          ins_i != i->insns.end();
          ins_i++ ){
 
-      int op;
+      int op = 0;
       for( op = 0; op < INS_OperandCount(*ins_i); op++ ){
       
         if( INS_OperandIsReg(*ins_i, op) ){
 
           if( INS_OperandReadAndWritten(*ins_i, op) ){
 
-            cerr << "R/W Reg " << INS_OperandReg(*ins_i, op) << endl;
+            //cerr << "R/W Reg " << INS_OperandReg(*ins_i, op) << endl;
 
           }else{
 
             if( INS_OperandRead(*ins_i, op) ){
 
-              cerr << "R Reg " << INS_OperandReg(*ins_i, op) << endl;
+              //cerr << "R Reg " << INS_OperandReg(*ins_i, op) << endl;
 
             }
 
             if( INS_OperandWritten(*ins_i, op) ){
 
-              cerr << "W Reg " << INS_OperandReg(*ins_i, op) << endl;
+              //cerr << "W Reg " << INS_OperandReg(*ins_i, op) << endl;
 
             }
 
          }
 
         }else if( INS_OperandIsMemory(*ins_i, op) ){
-
+          IFR_MemoryRef ref = IFR_MemoryRef();
           if( INS_OperandRead(*ins_i, op) && INS_OperandWritten(*ins_i, op) ){
   
-            cerr << "R/W "; //INS_OperandReg(*ins_i, mop) << endl;
-            printMemOp(*ins_i, op);
+            //cerr << "R/W "; //INS_OperandReg(*ins_i, mop) << endl;
+            computeMemRef(*ins_i, op, ref);
+            ref.type = MemBoth;
   
           }else{
   
             if( INS_OperandRead(*ins_i, op) ){
   
-              cerr << "R "; //INS_OperandReg(*ins_i, op) << endl;
-              printMemOp(*ins_i, op);
+              //cerr << "R "; //INS_OperandReg(*ins_i, op) << endl;
+              computeMemRef(*ins_i, op, ref);
+              ref.type = MemRead;
   
             }
   
             if( INS_OperandWritten(*ins_i, op) ){
   
-              cerr << "W "; //INS_OperandReg(*ins_i, op) << endl;
-              printMemOp(*ins_i, op);
+              //cerr << "W "; //INS_OperandReg(*ins_i, op) << endl;
+              computeMemRef(*ins_i, op, ref);
+              ref.type = MemWrite;
   
             }
   
           }
 
+          memrefs[ i->getEntryAddr() ][in].push_back(ref);
+
         }
 
       }      
-      cerr << "(" << INS_Disassemble(*ins_i) << ")" << endl;
-  
+      //cerr << "(" << INS_Disassemble(*ins_i) << ")" << endl;
+      in++; 
     }
 
   }
@@ -511,9 +530,30 @@ VOID instrumentRoutine(RTN rtn, VOID *v){
     fprintf(stderr,"\n");
   }
 
+  hash_map<ADDRINT, hash_map< unsigned, vector<IFR_MemoryRef> > > memrefs = 
+    hash_map<ADDRINT, hash_map< unsigned, vector<IFR_MemoryRef> > >();
+  computeMemoryReferences(bblist, memrefs);
   if( KnobSSA.Value() == true ){
-    computeSSA(bblist); 
+    for( hash_map<ADDRINT, hash_map< unsigned, vector<IFR_MemoryRef> > >::iterator i = memrefs.begin();
+         i != memrefs.end(); i++){
+
+      cerr << hex << i->first << dec << endl;
+      for( hash_map< unsigned, vector<IFR_MemoryRef> >::iterator j = i->second.begin();
+           j != i->second.end(); j++ ){
+        cerr << "\t" << j->first << ": ";
+        for( vector<IFR_MemoryRef>::iterator k = j->second.begin(); 
+             k != j->second.end(); k++ ){
+          printMemRef( *k );
+          cerr << ",";
+        }
+        cerr << endl;
+  
+      }
+
+    }
+
   }
+
 
   if( KnobBlocks.Value() == true ){
     for( std::vector<IFR_BasicBlock>::iterator i = bblist.begin();

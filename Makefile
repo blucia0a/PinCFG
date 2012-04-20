@@ -1,7 +1,7 @@
 PINTOOL = IFR_PinDriver.so
 MARKDOWN = /usr/bin/markdown
 
-SRCS = IFR_BasicBlock.cpp
+SRCS = IFR_BasicBlock.cpp IFR_MemoryRef.cpp
 
 BLDTYPE=pin
 ifeq ($(BLDTYPE),pin)
