@@ -367,10 +367,10 @@ void printMemRef(IFR_MemoryRef &ref){
 
   REG r;
   if( ref.base != REG_INVALID() ){
-    cerr << "r" << ref.base; 
+    cerr << "r" << ref.base << " + "; 
   }
 
-  cerr << " + " << ref.displacement;
+  cerr << ref.displacement;
 
   if( ref.index  != REG_INVALID() ){
 
@@ -537,10 +537,10 @@ VOID instrumentRoutine(RTN rtn, VOID *v){
     for( hash_map<ADDRINT, hash_map< unsigned, vector<IFR_MemoryRef> > >::iterator i = memrefs.begin();
          i != memrefs.end(); i++){
 
-      cerr << hex << i->first << dec << endl;
+      cerr << "Block " << hex << i->first << dec << endl;
       for( hash_map< unsigned, vector<IFR_MemoryRef> >::iterator j = i->second.begin();
            j != i->second.end(); j++ ){
-        cerr << "\t" << j->first << ": ";
+        cerr << "\tIns" << j->first << ": ";
         for( vector<IFR_MemoryRef>::iterator k = j->second.begin(); 
              k != j->second.end(); k++ ){
           printMemRef( *k );
