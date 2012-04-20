@@ -20,6 +20,8 @@ using __gnu_cxx::hash_map;
 KNOB<bool> KnobPred(KNOB_MODE_WRITEONCE, "pintool", "pred", "false", "Print block predecessors");
 KNOB<bool> KnobDom(KNOB_MODE_WRITEONCE, "pintool", "dom", "false", "Print block dominators");
 KNOB<bool> KnobIDom(KNOB_MODE_WRITEONCE, "pintool", "idom", "false", "Print block immediate dominators");
+KNOB<bool> KnobDF(KNOB_MODE_WRITEONCE, "pintool", "df", "false", "Print block dominance frontiers");
+KNOB<bool> KnobSSA(KNOB_MODE_WRITEONCE, "pintool", "ssa", "false", "Print ssa transformation");
 KNOB<bool> KnobBlocks(KNOB_MODE_WRITEONCE, "pintool", "blocks", "false", "Print disassembled code blocks ");
 
 enum MemOpType { MemRead = 0, MemWrite = 1 };
@@ -310,11 +312,11 @@ bool immediatelyDominates(ADDRINT b1, ADDRINT b2, hash_map<ADDRINT, ADDRINT> &id
 void computeDominanceFrontiers( vector<IFR_BasicBlock> &bblist, 
                                 hash_map<ADDRINT, set<ADDRINT> > &pred, 
                                 hash_map<ADDRINT, set<ADDRINT> > &dom, 
-                                hash_map<ADDRINT, ADDRINT> &idom 
+                                hash_map<ADDRINT, ADDRINT> &idom ,
                                 hash_map<ADDRINT, set<ADDRINT> > &df ){
 
 
-  for( vector<IFR_BasicBlock>::iterator i = bblist.begin(),
+  for( vector<IFR_BasicBlock>::iterator i = bblist.begin();
        i != bblist.end();
        i++ ){
 
@@ -329,14 +331,114 @@ void computeDominanceFrontiers( vector<IFR_BasicBlock> &bblist,
          ){
 
         runner = idom[ *pi ]; 
-        while( runner != idom[ i->getEntryAddr() ] ){
-          df[ runner ] = df[runner]; /*TODO: df[ runner ] <-- DF[runner] U {i}*/
-          /*runner = idom[runner];*/
+        while( runner != idom[ i->getEntryAddr() ] && runner != 0/*entry node*/ ){
+          df[ runner ].insert( i->getEntryAddr() );// = df[runner]; /*TODO: df[ runner ] <-- DF[runner] U {i}*/
+          runner = idom[ runner ];
         }
 
       }
  
     } 
+
+  }
+
+}
+
+void printMemOp(INS i, UINT32 op){
+
+  //assumes operand op to instruction i is a memory operation 
+  cerr << "M[ ";
+  if( INS_OperandIsImmediate( i, op ) ){
+    cerr << "Immediate...";
+  }
+
+  REG r;
+  if( (r = INS_OperandMemoryBaseReg( i, op )) != REG_INVALID() ){
+    cerr << "r" << r; 
+  }
+
+  ADDRDELTA d = INS_OperandMemoryDisplacement( i, op );
+  cerr << " + " << d;
+
+  REG ind;
+  if( (ind = INS_OperandMemoryIndexReg( i, op )) != REG_INVALID() ){
+
+    UINT32 s;
+    s = INS_OperandMemoryScale( i, op );
+    cerr << " + r" << ind << "*" << s;
+
+  }
+
+  cerr << " ]" << endl;
+
+}
+
+void computeSSA(vector<IFR_BasicBlock> &bblist){
+
+  for( vector<IFR_BasicBlock>::iterator i = bblist.begin();
+       i != bblist.end();
+       i++ ){
+
+    for( vector<INS>::iterator ins_i = i->insns.begin();
+         ins_i != i->insns.end();
+         ins_i++ ){
+
+      int op;
+      for( op = 0; op < INS_OperandCount(*ins_i); op++ ){
+      
+        if( INS_OperandIsReg(*ins_i, op) ){
+
+          if( INS_OperandReadAndWritten(*ins_i, op) ){
+
+            cerr << "R/W Reg " << INS_OperandReg(*ins_i, op) << endl;
+
+          }else{
+
+            if( INS_OperandRead(*ins_i, op) ){
+
+              cerr << "R Reg " << INS_OperandReg(*ins_i, op) << endl;
+
+            }
+
+            if( INS_OperandWritten(*ins_i, op) ){
+
+              cerr << "W Reg " << INS_OperandReg(*ins_i, op) << endl;
+
+            }
+
+         }
+
+        }else if( INS_OperandIsMemory(*ins_i, op) ){
+
+          if( INS_OperandRead(*ins_i, op) && INS_OperandWritten(*ins_i, op) ){
+  
+            cerr << "R/W "; //INS_OperandReg(*ins_i, mop) << endl;
+            printMemOp(*ins_i, op);
+  
+          }else{
+  
+            if( INS_OperandRead(*ins_i, op) ){
+  
+              cerr << "R "; //INS_OperandReg(*ins_i, op) << endl;
+              printMemOp(*ins_i, op);
+  
+            }
+  
+            if( INS_OperandWritten(*ins_i, op) ){
+  
+              cerr << "W "; //INS_OperandReg(*ins_i, op) << endl;
+              printMemOp(*ins_i, op);
+  
+            }
+  
+          }
+
+        }
+
+      }      
+      cerr << "(" << INS_Disassemble(*ins_i) << ")" << endl;
+  
+    }
 
   }
 
@@ -395,6 +497,24 @@ VOID instrumentRoutine(RTN rtn, VOID *v){
     }
   }
 
+  hash_map<ADDRINT, set<ADDRINT> > df = hash_map<ADDRINT, set<ADDRINT> >();
+  computeDominanceFrontiers(bblist, pred, dom, idom, df );
+  if( KnobDF.Value() == true ){
+    for( vector<IFR_BasicBlock>::iterator i = bblist.begin(); i != bblist.end(); i++){
+      fprintf(stderr,"DF of %p:\n\t",i->getEntryAddr());
+      for( set<ADDRINT>::iterator di = df[ i->getEntryAddr() ].begin();
+           di != df[ i->getEntryAddr() ].end(); di++ ){
+           fprintf(stderr,"%p ",*di);
+      }
+      fprintf(stderr,"\n");
+    }
+    fprintf(stderr,"\n");
+  }
+
+  if( KnobSSA.Value() == true ){
+    computeSSA(bblist); 
+  }
+
   if( KnobBlocks.Value() == true ){
     for( std::vector<IFR_BasicBlock>::iterator i = bblist.begin();
          i != bblist.end();
@@ -416,13 +536,15 @@ VOID instrumentImage(IMG img, VOID *v)
 
 }
 
-void Read(THREADID tid, ADDRINT addr, ADDRINT inst){
+void Read(THREADID tid, ADDRINT addr, ADDRINT inst)
+{
+
 }
 
-void Write(THREADID tid, ADDRINT addr, ADDRINT inst){
+void Write(THREADID tid, ADDRINT addr, ADDRINT inst)
+{
+
 }
-
-
 
 VOID threadBegin(THREADID threadid, CONTEXT *sp, INT32 flags, VOID *v)
 {

@@ -2,7 +2,6 @@
 #include <pin.H>
 class IFR_BasicBlock{
 
-  std::vector<INS> insns;
   ADDRINT target;
   ADDRINT fallthrough;
   bool isReturn;
@@ -21,10 +20,14 @@ public:
   void setFallthrough(ADDRINT ft);
   ADDRINT getTarget();
   ADDRINT getFallthrough();
+ 
   void setIsReturn(bool is);
 
   void print();
 
   void clear();
+  
+
+  std::vector<INS> insns;
 
 };

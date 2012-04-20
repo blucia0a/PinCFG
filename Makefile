@@ -19,7 +19,7 @@ TARG = $(PROG)
 endif
 
 
-CXXFLAGS += -I. -g -O0 -Wno-deprecated
+CXXFLAGS += -I. -g -O0 -Wno-deprecated 
 
 OBJS = $(SRCS:%.cpp=%.o)
 FACOBJS = $(FACSRCS:%.cpp=%.so)
